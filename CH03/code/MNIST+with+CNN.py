@@ -14,26 +14,32 @@ print(tf.__version__)
 # In[3]:
 
 from tensorflow.examples.tutorials.mnist import input_data
-data = input_data.read_data_sets('data/MNIST/', one_hot=True)
+data = input_data.read_data_sets('MNIST/', one_hot=True)
 
 
 # In[4]:
 
-print('Image Inventory')
-print('----------')
-print('Training: ' + str(len(data.train.labels)))
-print('Testing:  '+ str(len(data.test.labels)))
-print('----------')
+import os
+os.listdir('MNIST/')
 
 
 # In[5]:
+
+print('Image Inventory')
+print('----------')
+print('Training: {}'.format(len(data.train.labels)))
+print('Testing:  {}'.format(len(data.test.labels)))
+print('----------')
+
+
+# In[6]:
 
 import numpy as np
 import matplotlib.pyplot as plt
 get_ipython().magic('matplotlib inline')
 
 
-# In[6]:
+# In[7]:
 
 for i in range(2):
     image = data.train.images[i]
@@ -44,134 +50,119 @@ for i in range(2):
     print('-----------------')
     print(label)
     plt.show()
-
-
-# In[7]:
-
-session = tf.InteractiveSession()
+    
 
 
 # In[8]:
 
-def weight_(size):
-  initial = tf.truncated_normal(size, stddev=0.1)
-  return tf.Variable(initial)
+if not os.path.exists('MNIST/images'):
+    os.makedirs('MNIST/images/')
+os.chdir('MNIST/images/')
 
 
 # In[9]:
 
-def bias_(size):
-  initial = tf.constant(0.1, shape=size)
-  return tf.Variable(initial)
+from matplotlib import image
+for i in range(1,10):
+    png = data.train.images[i]
+    png = np.array(png, dtype='float')
+    pixels = png.reshape((28, 28))
+    image.imsave('image_no_{}.png'.format(i), pixels, cmap = 'gray')
 
 
 # In[10]:
 
-def conv2d(x, W):
-  return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+print(os.listdir())
 
 
 # In[11]:
 
-def max_pool_2x2(x):
-  return tf.nn.max_pool(x, ksize=[1, 2, 2, 1],
-                        strides=[1, 2, 2, 1], padding='SAME')
+from Augmentor import Pipeline
 
 
 # In[12]:
 
-Weight_convolution1 = weight_([5, 5, 1, 32])
-bias_convolution1 = bias_([32])
+augmentor = Pipeline('/home/asherif844/sparkNotebooks/Ch03/MNIST/images')
 
 
 # In[13]:
 
-x = tf.placeholder(tf.float32, shape=[None, 784])
-y = tf.placeholder(tf.float32, shape=[None, 10])
+augmentor.rotate(probability=0.9, max_left_rotation=25, max_right_rotation=25)
 
 
 # In[14]:
 
-x_image = tf.reshape(x, [-1, 28, 28, 1])
+for i in range(1,3):
+    augmentor.sample(10)
 
 
 # In[15]:
 
-x_image
+xtrain = data.train.images
+ytrain = np.asarray(data.train.labels)
+xtest = data.test.images 
+ytest = np.asarray(data.test.labels)
 
 
 # In[16]:
 
-height_conv1 = tf.nn.relu(conv2d(x_image, Weight_convolution1) + bias_convolution1)
-height_pool1 = max_pool_2x2(height_conv1)
+xtrain = xtrain.reshape( xtrain.shape[0],28,28,1)
+xtest = xtest.reshape(xtest.shape[0],28,28,1)
+ytest= ytest.reshape(ytest.shape[0],10)
+ytrain = ytrain.reshape(ytrain.shape[0],10)
 
 
 # In[17]:
 
-height_pool1
+print(xtrain.shape)
+print(ytrain.shape)
+print(xtest.shape)
+print(ytest.shape)
 
 
 # In[18]:
 
-Weight_convolution2 = weight_([5, 5, 32, 64])
-bias_convolution2 = bias_([64])
+import keras
+import keras.backend as K
+from keras.models import Sequential
+from keras.layers import Dense, Flatten, Conv2D
+
+K.set_image_dim_ordering('tf')
+
+model = Sequential()
+
+model.add(Conv2D(32, kernel_size=(5, 5),activation='relu', input_shape=(28,28,1)))
+model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dense(10, activation='sigmoid'))
 
 
 # In[19]:
 
-height_conv2 = tf.nn.relu(conv2d(height_pool1, 
-                                 Weight_convolution2) + bias_convolution2)
-height_pool2 = max_pool_2x2(height_conv2)
+model.compile(optimizer='adam',loss='categorical_crossentropy', 
+              metrics=['accuracy'])
 
 
 # In[20]:
 
-Weight_fc1 = weight_([7 * 7 * 64, 1024])
-bias_fc1 = bias_([1024])
+model.fit(xtrain,ytrain,batch_size=512,
+          epochs=5,
+          validation_data=(xtest, ytest))
 
 
 # In[21]:
 
-height_pool2_flat = tf.reshape(height_pool2, [-1, 7*7*64])
-height_fc1 = tf.nn.relu(tf.matmul(height_pool2_flat, Weight_fc1) + bias_fc1)
+stats = model.evaluate(xtest, ytest)
+print('The accuracy rate is {}%'.format(round(stats[1],3)*100))
+print('The loss rate is {}%'.format(round(stats[0],2)*100))
 
 
 # In[22]:
 
-keep_prob = tf.placeholder(tf.float32)
-height_fc1_drop = tf.nn.dropout(height_fc1, keep_prob)
+model.summary()
 
 
-# In[23]:
-
-Weight_fc2 = weight_([1024, 10])
-bias_fc2 = bias_([10])
+# In[ ]:
 
 
-# In[24]:
-
-y_conv = tf.matmul(height_fc1_drop, Weight_fc2) + bias_fc2
-
-
-# In[25]:
-
-cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=y_conv))
-train_step = tf.train.AdamOptimizer(0.0001).minimize(cross_entropy)
-correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y, 1))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-
-
-# In[26]:
-
-with tf.Session() as sess:
-  sess.run(tf.global_variables_initializer())
-  for i in range(1000):
-    batch = data.train.next_batch(50)
-    if i % 100 == 0:
-      train_accuracy = accuracy.eval(feed_dict={
-          x: batch[0], y: batch[1], keep_prob: 1.0})
-      print('step %d, training accuracy %g' % (i, train_accuracy))
-    train_step.run(feed_dict={x: batch[0], y: batch[1], keep_prob: 0.5})
-  print('test accuracy %g' % accuracy.eval(feed_dict={
-      x: data.test.images, y: data.test.labels, keep_prob: 1.0}))
 
